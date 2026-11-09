@@ -1,4 +1,4 @@
-const GRAPH = "https://graph.instagram.com/v24.0"
+import { GRAPH, igPath } from "@/lib/graph"
 
 export interface IGButton {
   type: "web_url" | "postback"
@@ -27,7 +27,7 @@ export interface SendResult {
 
 async function post(path: string, token: string, body: any): Promise<SendResult> {
   try {
-    const res = await fetch(`${GRAPH}/${path}?access_token=${encodeURIComponent(token)}`, {
+    const res = await fetch(`${GRAPH}/${igPath(path)}?access_token=${encodeURIComponent(token)}`, {
       method: "POST",
       signal: AbortSignal.timeout(15000),
       headers: { "Content-Type": "application/json" },

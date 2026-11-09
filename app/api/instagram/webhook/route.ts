@@ -1,3 +1,4 @@
+import { GRAPH, igPath } from "@/lib/graph"
 /* @ts-nocheck */
 
 import crypto from "crypto"
@@ -146,7 +147,7 @@ function responsePreviewText(content: any): string {
 // ============================================================
 async function verifyFollowStatus(igScopedId: string, pageAccessToken: string): Promise<{ follows: boolean | null; error?: 'auth' | 'transient' }> {
   try {
-    const url = `https://graph.instagram.com/v21.0/${igScopedId}?fields=is_user_follow_business&access_token=${pageAccessToken}`
+    const url = `${GRAPH}/${igScopedId}?fields=is_user_follow_business&access_token=${pageAccessToken}`
     // 5s timeout -- Graph API is fast, anything longer means trouble
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!response.ok) {
