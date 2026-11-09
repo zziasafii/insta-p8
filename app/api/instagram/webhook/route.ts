@@ -205,6 +205,23 @@ export async function POST(request: NextRequest) {
     const supabase = await getSupabaseServerClient()
 
     for (const entry of body.entry) {
+      // Apps on Meta's Unified login can deliver DMs and postbacks as `changes`
+      // entries (field "messages" / "messaging_postbacks") instead of `messaging`.
+      // Move them into `messaging` so the DM code below handles both shapes.
+      if (Array.isArray(entry.changes)) {
+        const dmChanges = entry.changes.filter(
+          (c: any) => (c.field === "messages" || c.field === "messaging_postbacks") && c.value?.sender?.id,
+        )
+        if (dmChanges.length) {
+          entry.messaging = [...(entry.messaging || []), ...dmChanges.map((c: any) => c.value)]
+          entry.changes = entry.changes.filter((c: any) => !dmChanges.includes(c))
+          if (!entry.changes.length) delete entry.changes
+        }
+      }
+      console.log(
+        `[webhook] entry id=${entry.id} object=${body.object} changes=[${(entry.changes || []).map((c: any) => c.field).join(",")}] messaging=${entry.messaging?.length || 0}`,
+      )
+
       // Skip pure system events (echo / read / delivery)
       if (entry.messaging) {
         const isSystemEvent = entry.messaging.every(

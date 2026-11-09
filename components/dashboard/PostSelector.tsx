@@ -39,8 +39,41 @@ export function PostSelector({
   const [isBrowsing, setIsBrowsing] = useState<boolean>(!selectedMediaId)
   const [currentSelectedMedia, setCurrentSelectedMedia] = useState<InstagramMediaItem | null>(initialMedia)
 
-  const fetchMedia = async () => {
-    if (!userId) return
+  const [linkInput, setLinkInput] = useState("")
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [linkLoading, setLinkLoading] = useState(false)
+
+  // Pull the shortcode out of links like instagram.com/reel/ABC123/?igsh=...
+  const shortcodeFromLink = (link: string): string | null => {
+    const m = link.trim().match(/instagram\.com\/(?:[^/?#]+\/)?(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i)
+    return m ? m[1] : null
+  }
+
+  const handleUseLink = async () => {
+    setLinkError(null)
+    const code = shortcodeFromLink(linkInput)
+    if (!code) {
+      setLinkError("That doesn't look like an Instagram post or reel link.")
+      return
+    }
+    setLinkLoading(true)
+    try {
+      // Always reload so a reel posted a minute ago is included.
+      const items = await fetchMedia()
+      const found = items.find((m) => (m.permalink || "").includes(`/${code}`))
+      if (found) {
+        handleSelectPost(found)
+        setLinkInput("")
+      } else {
+        setLinkError("Couldn't find that reel on this account. Check it's posted on the connected account, then try again.")
+      }
+    } finally {
+      setLinkLoading(false)
+    }
+  }
+
+  const fetchMedia = async (): Promise<InstagramMediaItem[]> => {
+    if (!userId) return []
     setLoading(true)
     setError(null)
     try {
@@ -60,9 +93,11 @@ export function PostSelector({
         const found = items.find((m) => m.id === selectedMediaId)
         if (found) setCurrentSelectedMedia(found)
       }
+      return items
     } catch (err: any) {
       console.error("[PostSelector] Error fetching media:", err)
       setError(err?.message || "Could not fetch Instagram posts. Please retry.")
+      return []
     } finally {
       setLoading(false)
     }
@@ -237,6 +272,38 @@ export function PostSelector({
                     Keep selected
                   </button>
                 )}
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="url"
+                    value={linkInput}
+                    onChange={(e) => {
+                      setLinkInput(e.target.value)
+                      setLinkError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        void handleUseLink()
+                      }
+                    }}
+                    placeholder="Paste a reel or post link, e.g. instagram.com/reel/..."
+                    className="flex-1 h-8 px-3 text-xs bg-muted/40 border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleUseLink()}
+                    disabled={!linkInput.trim() || linkLoading}
+                    className="h-8 px-3 rounded-lg border border-border bg-card hover:bg-accent text-xs font-medium text-foreground shrink-0 transition-colors disabled:opacity-40 inline-flex items-center gap-1.5"
+                  >
+                    {linkLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                    Use link
+                  </button>
+                </div>
+                {linkError && <p className="text-[11px] text-destructive">{linkError}</p>}
+                <p className="text-[10px] text-muted-foreground">Or pick from your feed below.</p>
               </div>
 
               <div className="flex items-center gap-2">
