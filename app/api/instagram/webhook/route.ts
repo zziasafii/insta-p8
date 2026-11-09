@@ -221,6 +221,11 @@ export async function POST(request: NextRequest) {
       console.log(
         `[webhook] entry id=${entry.id} object=${body.object} changes=[${(entry.changes || []).map((c: any) => c.field).join(",")}] messaging=${entry.messaging?.length || 0}`,
       )
+      for (const ev of entry.messaging || []) {
+        console.log(
+          `[webhook] event keys=[${Object.keys(ev).join(",")}] message=[${Object.keys(ev.message || {}).join(",")}] sender=${ev.sender?.id} recipient=${ev.recipient?.id} echo=${!!ev.message?.is_echo}`,
+        )
+      }
 
       // Skip pure system events (echo / read / delivery)
       if (entry.messaging) {
@@ -291,6 +296,7 @@ export async function POST(request: NextRequest) {
         .eq("user_id", user.id)
         .eq("is_active", true)
 
+      console.log(`[webhook] user=${user.username} active automations=${automations?.length || 0}`)
       if (!automations?.length) continue
 
       // ============================================================
