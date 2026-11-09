@@ -178,6 +178,16 @@ async function verifyFollowStatus(igScopedId: string, pageAccessToken: string): 
 // Unlock-attempt counter is in lib/unlock-tracking.ts -- uses Supabase
 // unlock_attempts table so the 3-attempt cap works across Vercel instances.
 
+// Instagram IDs are bigger than JavaScript can hold exactly (2^53), so a BIGINT
+// read as a number gets rounded and later lookups miss. Read them as text too.
+const USER_COLUMNS = "*, id_text:id::text, business_account_id_text:business_account_id::text"
+function fixUserIds(user: any) {
+  if (!user) return user
+  if (user.id_text) user.id = user.id_text
+  if (user.business_account_id_text) user.business_account_id = user.business_account_id_text
+  return user
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text()
@@ -240,7 +250,7 @@ export async function POST(request: NextRequest) {
       // ---------- User resolution: direct, payload fallback, token verify ----------
       let { data: user } = await supabase
         .from("users")
-        .select("*")
+        .select(USER_COLUMNS)
         .or(`business_account_id.eq.${webhookId},page_id.eq.${webhookId}`)
         .single()
 
@@ -260,7 +270,7 @@ export async function POST(request: NextRequest) {
           if (candidateId === webhookId) continue
           const { data: fallbackUser } = await supabase
             .from("users")
-            .select("*")
+            .select(USER_COLUMNS)
             .or(`business_account_id.eq.${candidateId},page_id.eq.${candidateId}`)
             .single()
           if (fallbackUser) {
@@ -272,7 +282,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!user) {
-        const { data: allUsers } = await supabase.from("users").select("*")
+        const { data: allUsers } = await supabase.from("users").select(USER_COLUMNS)
         if (allUsers) {
           for (const candidate of allUsers) {
             if (!candidate.access_token) continue
@@ -289,6 +299,7 @@ export async function POST(request: NextRequest) {
         console.log(`[webhook] ❌ Could not resolve user for ID ${webhookId}`)
         continue
       }
+      user = fixUserIds(user)
 
       const { data: automations } = await supabase
         .from("automations")
