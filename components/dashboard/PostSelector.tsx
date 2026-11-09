@@ -110,15 +110,14 @@ export function PostSelector({
   }, [mode, userId])
 
   useEffect(() => {
+    // Only follow the parent when a post is selected. Resetting to "all" here
+    // whenever nothing is selected would close the picker as soon as the feed loads.
     if (selectedMediaId) {
       setMode("specific")
       if (!currentSelectedMedia && mediaList.length > 0) {
         const found = mediaList.find((m) => m.id === selectedMediaId)
         if (found) setCurrentSelectedMedia(found)
       }
-    } else {
-      setMode("all")
-      setCurrentSelectedMedia(null)
     }
   }, [selectedMediaId, mediaList])
 
