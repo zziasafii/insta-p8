@@ -119,6 +119,11 @@ async function sendAutomationResponse(
     }
   } else if (content.card) {
     result = await sendCardDM(token, recipient, content.card)
+    // Optional follow-up text after the card. Only in a DM thread: a comment's
+    // private reply allows one message until the person writes back.
+    if (result.ok && content.after_card_message && recipient.id) {
+      await sendTextDM(token, recipient, content.after_card_message)
+    }
   } else if (content.message) {
     result = await sendTextDM(token, recipient, content.message, quickReplies)
   } else {
