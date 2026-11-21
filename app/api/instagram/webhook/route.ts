@@ -19,6 +19,13 @@ import {
 import { generateAIReply } from "@/lib/ai-reply"
 import { bumpUnlockAttempt, clearUnlockAttempts, unlockKey } from "@/lib/unlock-tracking"
 
+// specific_media_id holds one post ID or several, comma-separated.
+function onPost(a: any, mediaId: string | null | undefined): boolean {
+  if (!a.specific_media_id || !mediaId) return false
+  return String(a.specific_media_id).split(",").map((s) => s.trim()).includes(String(mediaId))
+}
+
+
 const WEBHOOK_VERIFY_TOKEN = process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN
 // Meta signs every webhook POST with HMAC-SHA256 of the raw body. Depending on app setup the
 // signing key is the Instagram app secret or the parent Meta app secret, so accept either.
@@ -334,12 +341,12 @@ export async function POST(request: NextRequest) {
 
           // Priority: specific post reply-all → specific post keyword → global keyword
           let match = commentAutomations.find(
-            (a: any) => a.specific_media_id === mediaId && a.trigger_type === "reply_all",
+            (a: any) => onPost(a, mediaId) && a.trigger_type === "reply_all",
           )
           if (!match) {
             match = commentAutomations.find(
               (a: any) =>
-                a.specific_media_id === mediaId &&
+                onPost(a, mediaId) &&
                 a.trigger_type === "keyword" &&
                 keywordMatches(a.trigger_value, commentText),
             )
@@ -472,14 +479,14 @@ export async function POST(request: NextRequest) {
           if (event.message?.attachments?.[0]?.type === "story_mention") {
             storyMediaId = event.message.attachments[0].payload?.url || null
             match = storyAutomations.find(
-              (a: any) => a.trigger_type === "mention" && (!a.specific_media_id || a.specific_media_id === storyMediaId),
+              (a: any) => a.trigger_type === "mention" && (!a.specific_media_id || onPost(a, storyMediaId)),
             )
           } else if (event.reaction) {
             const reactionEmoji = event.reaction.emoji
             storyMediaId = event.reaction.mid || null
             match = storyAutomations.find((a: any) => {
               if (a.trigger_type !== "reaction") return false
-              if (a.specific_media_id && a.specific_media_id !== storyMediaId) return false
+              if (a.specific_media_id && !onPost(a, storyMediaId)) return false
               const triggers = a.trigger_value?.split(",").map((t: string) => t.trim()) || []
               if (triggers.length > 0 && triggers[0] !== "ALL" && triggers[0] !== "ALL_REACTIONS" && triggers[0] !== "") {
                 return triggers.includes(reactionEmoji)
@@ -491,7 +498,7 @@ export async function POST(request: NextRequest) {
             storyMediaId = event.message.reply_to.story.id || null
             match = storyAutomations.find((a: any) => {
               if (a.trigger_type !== "reply") return false
-              if (a.specific_media_id && a.specific_media_id !== storyMediaId) return false
+              if (a.specific_media_id && !onPost(a, storyMediaId)) return false
               const triggers = a.trigger_value?.split(",").map((t: string) => t.trim()) || []
               if (
                 triggers.length > 0 &&

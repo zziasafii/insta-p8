@@ -3,7 +3,7 @@
 import { useRef, useState } from "react"
 import { Loader2 } from "lucide-react"
 import type { Automation } from "@/lib/types"
-import { PostSelector, InstagramMediaItem } from "@/components/dashboard/PostSelector"
+import { PostSelector } from "@/components/dashboard/PostSelector"
 
 type Source = Automation["trigger_source"]
 
@@ -15,8 +15,7 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
   const [source, setSource] = useState<Source>(initialSource)
   const [keyword, setKeyword] = useState("")
   const [answer, setAnswer] = useState("")
-  const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null)
-  const [selectedMedia, setSelectedMedia] = useState<InstagramMediaItem | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const submitting = useRef(false)
@@ -38,14 +37,13 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
           trigger_type: source === "story" ? "reply" : "keyword",
           trigger_value: keyword.trim(),
           content: { message: answer.trim(), ...(source === "comment" ? { reply_mode: "dm_only" } : {}) },
-          specific_media_id: source === "comment" ? selectedMediaId : null,
+          specific_media_id: source === "comment" && selectedIds.length ? selectedIds.join(",") : null,
         }),
       })
       if (!response.ok) throw new Error("Could not save. Please try again.")
       setKeyword("")
       setAnswer("")
-      setSelectedMediaId(null)
-      setSelectedMedia(null)
+      setSelectedIds([])
       onSuccess(source)
     } catch {
       setError("Could not save. Check your connection and try again.")
@@ -64,10 +62,7 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
           onChange={event => {
             const next = event.target.value as Source
             setSource(next)
-            if (next !== "comment") {
-              setSelectedMediaId(null)
-              setSelectedMedia(null)
-            }
+            if (next !== "comment") setSelectedIds([])
           }}
           className="rounded-md bg-card py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -82,16 +77,13 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
           <div className="mb-3">
             <p className="text-sm font-medium text-foreground">Choose where this runs</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Apply this reply to every post/reel, or pick one specific post or reel.
+              Apply this reply to every post/reel, or pick one or more specific posts or reels.
             </p>
           </div>
           <PostSelector
             userId={userId}
-            selectedMediaId={selectedMediaId}
-            onSelect={(id, item) => {
-              setSelectedMediaId(id)
-              setSelectedMedia(item)
-            }}
+            selectedIds={selectedIds}
+            onChange={setSelectedIds}
           />
         </div>
       )}
@@ -124,8 +116,8 @@ export function QuickAutomationForm({ userId, initialSource, onSuccess }: {
       <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-3">
         <p className="text-xs text-muted-foreground">
           {source === "comment"
-            ? selectedMediaId
-              ? "Triggers on selected post only · Reply sent by DM"
+            ? selectedIds.length
+              ? `Triggers on ${selectedIds.length === 1 ? "the selected post" : `${selectedIds.length} selected posts`} only · Reply sent by DM`
               : "Triggers on any post or reel · Reply sent by DM"
             : source === "story"
             ? "Matches keywords in story replies"

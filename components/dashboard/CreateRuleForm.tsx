@@ -11,6 +11,7 @@ import {
 import { TagInput } from "@/components/ui/tag-input"
 import type { ProButton, QuickReplyOption, Automation } from "@/lib/types"
 import { toast } from "sonner"
+import { PostSelector, parseMediaIds } from "@/components/dashboard/PostSelector"
 
 /* ============================================================
    AESTHETIC & SEXY WIZARD FOR INSTAGRAM AUTOMATION RULES
@@ -39,8 +40,8 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
   /* ---------- WHEN ---------- */
   const [triggers, setTriggers] = useState<string[]>([])
   const [storyTriggerType, setStoryTriggerType] = useState<"mention" | "reaction" | "reply">("mention")
-  const [selectedReel, setSelectedReel] = useState<any | null>(null)
-  const [hasSelectedReelOption, setHasSelectedReelOption] = useState<boolean>(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [postMode, setPostMode] = useState<"all" | "specific">("all")
 
   /* ---------- THEN ---------- */
   const [type, setType] = useState<"text" | "card" | "media">("text")
@@ -65,25 +66,6 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
   const [typingIndicator, setTypingIndicator] = useState(false)
 
   const [saving, setSaving] = useState(false)
-  const [reels, setReels] = useState<any[]>([])
-  const [loadingReels, setLoadingReels] = useState(false)
-
-  useEffect(() => {
-    if (!userId) return
-    let cancelled = false
-    setLoadingReels(true)
-    fetch(`/api/instagram/media?userId=${userId}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (cancelled) return
-        const list = j.data && Array.isArray(j.data) ? j.data : Array.isArray(j) ? j : []
-        setReels(list)
-      })
-      .catch(() => {})
-      .finally(() => !cancelled && setLoadingReels(false))
-    return () => { cancelled = true }
-  }, [userId])
-
   /* Prefill on edit */
   useEffect(() => {
     if (!editRule) return
@@ -117,12 +99,9 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
     setDelaySeconds(Number(content.delay_seconds) || 0)
     setTypingIndicator(content.typing_indicator === true)
     
-    if (editRule.specific_media_id) {
-      setSelectedReel({ id: editRule.specific_media_id, caption: "Selected post" })
-      setHasSelectedReelOption(true)
-    } else {
-      setHasSelectedReelOption(false)
-    }
+    const ids = parseMediaIds(editRule.specific_media_id)
+    setSelectedIds(ids)
+    setPostMode(ids.length ? "specific" : "all")
   }, [editRule])
 
   /* Auto name */
@@ -153,7 +132,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
   const needsKeywords = triggerSource === "dm" || (triggerSource === "story" && storyTriggerType !== "mention")
 
   const whenValid = triggerSource === "comment" 
-    ? hasSelectedReelOption // Comment trigger is valid once they select a specific post or global option
+    ? postMode === "all" || selectedIds.length > 0
     : !needsKeywords || triggers.length > 0
 
   const thenValid =
@@ -168,7 +147,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
   ]
   const sourceLabel = triggerSource === "comment" ? "comment" : triggerSource === "dm" ? "direct message" : "story"
   const validationHint = step === 0
-    ? triggerSource === "comment" && !hasSelectedReelOption ? "Choose a post, reel, or All posts to continue." : needsKeywords && triggers.length === 0 ? "Add at least one keyword to continue." : ""
+    ? triggerSource === "comment" && !whenValid ? "Pick at least one post or reel, or All posts, to continue." : needsKeywords && triggers.length === 0 ? "Add at least one keyword to continue." : ""
     : step === 1 && !thenValid ? "Add the reply people should receive." : step === 2 && !name.trim() ? "Give this workflow a name before publishing." : ""
 
   /* Plain-language summary sentence */
@@ -238,7 +217,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
           : triggerSource === "story" && storyTriggerType === "reaction" && triggers.length === 0 ? "ALL_REACTIONS"
             : triggers.length > 0 ? triggers.join(", ") : "ALL",
       content,
-      specific_media_id: selectedReel?.id || null,
+      specific_media_id: selectedIds.length ? selectedIds.join(",") : null,
     }
 
     try {
@@ -353,92 +332,21 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
 
               {triggerSource === "comment" && (
                 <div className="space-y-4">
-                  <FieldLabel>Automate which post or reel?</FieldLabel>
-                  {loadingReels ? (
-                    <div className="p-8 flex flex-col items-center justify-center gap-3 border border-border rounded-2xl bg-white/[0.01]">
-                      <Loader2 className="w-6 h-6 animate-spin text-accent-yellow-foreground" />
-                      <span className="text-xs text-muted-foreground font-mono-ui">Fetching Instagram feed...</span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-3 max-h-[55vh] sm:max-h-[420px] overflow-y-auto pr-1 pb-1">
-                      {/* Option: Global Post Rule */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedReel(null)
-                          setHasSelectedReelOption(true)
-                        }}
-                        className={`aspect-square rounded-xl border flex flex-col items-center justify-center p-2 sm:p-4 text-center transition-all duration-200 ${
-                                                  hasSelectedReelOption && selectedReel === null
-                                                    ? "border-accent-yellow ring-2 ring-accent-yellow/30 bg-accent-yellow/10"
-                                                    : "border-border bg-card hover:border-foreground/30 hover:bg-accent"
-                                                }`}
-                                              >
-                                                <Globe className="w-6 h-6 mb-2 text-accent-blue" />
-                                                <span className="text-xs font-bold text-foreground">All Posts & Reels</span>
-                                                <span className="text-[10px] text-muted-foreground mt-1 font-mono-ui">Global Trigger</span>
-                                              </button>
-
-                      {reels.map((reel) => {
-                        const isSelected = hasSelectedReelOption && selectedReel?.id === reel.id
-                        return (
-                          <button
-                            key={reel.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedReel(reel)
-                              setHasSelectedReelOption(true)
-                            }}
-                            className={`aspect-square rounded-xl border overflow-hidden relative group text-left transition-all duration-200 bg-neutral-900 ${
-                                                        isSelected
-                                                          ? "border-accent-yellow ring-2 ring-accent-yellow/30"
-                                                          : "border-border hover:border-foreground/40"
-                                                      }`}
-                                                    >
-                                                      {reel.image_url ? (
-                                                        <img
-                                                          src={reel.image_url}
-                                                          alt=""
-                                                          loading="lazy"
-                                                          className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-                                                        />
-                                                      ) : (
-                                                        <div className="w-full h-full bg-neutral-900 flex items-center justify-center">
-                                                          <Film className="w-6 h-6 text-neutral-500" />
-                                                        </div>
-                                                      )}
-
-                                                      {/* Subtle dark gradient so caption + type pill stay readable in BOTH themes */}
-                                                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
-
-                                                      {/* Type Overlay */}
-                                                      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/70 text-[9px] font-mono-ui text-white uppercase tracking-wider border border-white/10">
-                                                        {reel.media_type === "STORY" ? "Story" : reel.media_type === "VIDEO" ? "Reel" : "Post"}
-                                                      </span>
-
-                                                      {/* Selected Check overlay */}
-                                                      {isSelected && (
-                                                        <div className="absolute inset-0 bg-accent-yellow/20 flex items-center justify-center backdrop-blur-[1px]">
-                                                          <div className="w-9 h-9 rounded-full bg-accent-yellow text-accent-yellow-foreground flex items-center justify-center shadow-lg ring-2 ring-accent-yellow-foreground">
-                                                            <Check className="w-4 h-4 stroke-[3]" />
-                                                          </div>
-                                                        </div>
-                                                      )}
-
-                                                      {/* Caption snippet at bottom — white text on dark gradient for contrast in BOTH themes */}
-                                                      <div className="absolute inset-x-0 bottom-0 px-2 pt-6 pb-2 pointer-events-none">
-                                                        <p className="text-[10px] text-white line-clamp-1 font-sans drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{reel.caption || "Untitled"}</p>
-                                                      </div>
-                                                    </button>
-                        )
-                      })}
-                    </div>
+                  <FieldLabel>Automate which posts or reels?</FieldLabel>
+                  <PostSelector
+                    userId={userId}
+                    selectedIds={selectedIds}
+                    onChange={setSelectedIds}
+                    onModeChange={setPostMode}
+                  />
+                  {postMode === "specific" && selectedIds.length === 0 && (
+                    <p className="text-[11px] text-destructive">Pick at least one post or reel, or choose All Posts & Reels.</p>
                   )}
                 </div>
               )}
 
               {/* Configure keywords only after selection (for Comment triggers) or always for others */}
-              {(triggerSource !== "comment" || hasSelectedReelOption) && (
+              {(triggerSource !== "comment" || whenValid) && (
                 <div className="space-y-4 pt-3 border-t border-border animate-in fade-in slide-in-from-top-2 duration-300">
                   {triggerSource === "comment" ? (
                     <div className="space-y-2">

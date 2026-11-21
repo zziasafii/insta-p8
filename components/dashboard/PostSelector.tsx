@@ -19,25 +19,30 @@ export interface InstagramMediaItem {
 
 interface PostSelectorProps {
   userId: string
-  selectedMediaId: string | null
-  onSelect: (mediaId: string | null, mediaItem: InstagramMediaItem | null) => void
-  initialMedia?: InstagramMediaItem | null
+  /** Selected post IDs. Empty = all posts. */
+  selectedIds: string[]
+  onChange: (ids: string[]) => void
+  /** Told when the user switches between "All" and "Specific". */
+  onModeChange?: (mode: "all" | "specific") => void
 }
+
+/** The DB stores several post IDs comma-separated in specific_media_id. */
+export const parseMediaIds = (v?: string | null): string[] =>
+  (v || "").split(",").map((s) => s.trim()).filter(Boolean)
 
 export function PostSelector({
   userId,
-  selectedMediaId,
-  onSelect,
-  initialMedia = null,
+  selectedIds,
+  onChange,
+  onModeChange,
 }: PostSelectorProps) {
-  const [mode, setMode] = useState<"all" | "specific">(selectedMediaId ? "specific" : "all")
+  const [mode, setMode] = useState<"all" | "specific">(selectedIds.length ? "specific" : "all")
   const [mediaList, setMediaList] = useState<InstagramMediaItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterType, setFilterType] = useState<"ALL" | "POST" | "REEL">("ALL")
-  const [isBrowsing, setIsBrowsing] = useState<boolean>(!selectedMediaId)
-  const [currentSelectedMedia, setCurrentSelectedMedia] = useState<InstagramMediaItem | null>(initialMedia)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const [linkInput, setLinkInput] = useState("")
   const [linkError, setLinkError] = useState<string | null>(null)
@@ -62,7 +67,12 @@ export function PostSelector({
       const items = await fetchMedia()
       const found = items.find((m) => (m.permalink || "").includes(`/${code}`))
       if (found) {
-        handleSelectPost(found)
+        if (selectedIds.includes(found.id)) {
+          setNotice("That one is already selected.")
+        } else {
+          onChange([...selectedIds, found.id])
+          setNotice(`Added: ${found.caption?.slice(0, 40) || "post"}`)
+        }
         setLinkInput("")
       } else {
         setLinkError("Couldn't find that reel on this account. Check it's posted on the connected account, then try again.")
@@ -88,11 +98,6 @@ export function PostSelector({
         ? json
         : []
       setMediaList(items)
-
-      if (selectedMediaId && !currentSelectedMedia) {
-        const found = items.find((m) => m.id === selectedMediaId)
-        if (found) setCurrentSelectedMedia(found)
-      }
       return items
     } catch (err: any) {
       console.error("[PostSelector] Error fetching media:", err)
@@ -110,42 +115,29 @@ export function PostSelector({
   }, [mode, userId])
 
   useEffect(() => {
-    // Only follow the parent when a post is selected. Resetting to "all" here
+    // Only follow the parent when posts are selected. Resetting to "all" here
     // whenever nothing is selected would close the picker as soon as the feed loads.
-    if (selectedMediaId) {
-      setMode("specific")
-      if (!currentSelectedMedia && mediaList.length > 0) {
-        const found = mediaList.find((m) => m.id === selectedMediaId)
-        if (found) setCurrentSelectedMedia(found)
-      }
-    }
-  }, [selectedMediaId, mediaList])
+    if (selectedIds.length) setMode("specific")
+  }, [selectedIds.join(",")])
 
   const handleSelectMode = (newMode: "all" | "specific") => {
     setMode(newMode)
+    onModeChange?.(newMode)
+    setNotice(null)
     if (newMode === "all") {
-      setCurrentSelectedMedia(null)
-      setIsBrowsing(false)
-      onSelect(null, null)
-    } else {
-      setIsBrowsing(true)
-      if (mediaList.length === 0) {
-        void fetchMedia()
-      }
+      onChange([])
+    } else if (mediaList.length === 0) {
+      void fetchMedia()
     }
   }
 
-  const handleSelectPost = (item: InstagramMediaItem) => {
-    setCurrentSelectedMedia(item)
-    setIsBrowsing(false)
-    onSelect(item.id, item)
+  const togglePost = (item: InstagramMediaItem) => {
+    setNotice(null)
+    onChange(selectedIds.includes(item.id) ? selectedIds.filter((id) => id !== item.id) : [...selectedIds, item.id])
   }
 
-  const handleClearSelection = () => {
-    setCurrentSelectedMedia(null)
-    setIsBrowsing(true)
-    onSelect(null, null)
-  }
+  const removeId = (id: string) => onChange(selectedIds.filter((x) => x !== id))
+  const itemFor = (id: string) => mediaList.find((m) => m.id === id)
 
   const filteredList = useMemo(() => {
     return mediaList.filter((item) => {
@@ -188,90 +180,61 @@ export function PostSelector({
           }`}
         >
           <Film className="w-3.5 h-3.5 text-accent-yellow shrink-0" />
-          <span>Specific Post / Reel</span>
+          <span>Specific Posts / Reels</span>
         </button>
       </div>
 
       {mode === "specific" && (
         <div className="rounded-xl border border-border bg-card/60 p-3.5 space-y-3 animate-in fade-in duration-200">
-          {currentSelectedMedia && !isBrowsing ? (
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card shadow-xs">
-              <div className="w-14 h-14 rounded-md overflow-hidden bg-muted shrink-0 border border-border relative">
-                {currentSelectedMedia.image_url ? (
-                  <img
-                    src={currentSelectedMedia.image_url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    <Film className="w-5 h-5" />
-                  </div>
-                )}
-                <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[8px] font-mono-ui text-white uppercase">
-                  {currentSelectedMedia.media_type === "VIDEO" ? "Reel" : "Post"}
-                </span>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-accent-yellow-foreground bg-accent-yellow/10 px-1.5 py-0.5 rounded">
-                    Selected Post
-                  </span>
-                  {currentSelectedMedia.permalink && (
-                    <a
-                      href={currentSelectedMedia.permalink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      title="View on Instagram"
+          {selectedIds.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-accent-yellow-foreground">
+                Runs on {selectedIds.length} {selectedIds.length === 1 ? "post" : "posts"}
+              </p>
+              {selectedIds.map((id) => {
+                const item = itemFor(id)
+                return (
+                  <div key={id} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-card shadow-xs">
+                    <div className="w-10 h-10 rounded-md overflow-hidden bg-muted shrink-0 border border-border">
+                      {item?.image_url ? (
+                        <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                          <Film className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-foreground font-medium line-clamp-1">
+                        {item ? (item.media_type === "VIDEO" ? "Reel · " : "Post · ") + (item.caption || "Untitled") : loading ? "Loading…" : "Post"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground font-mono-ui mt-0.5 flex items-center gap-1.5">
+                        ID: {id}
+                        {item?.permalink && (
+                          <a href={item.permalink} target="_blank" rel="noopener noreferrer" title="View on Instagram" className="hover:text-foreground">
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeId(id)}
+                      title="Remove this post"
+                      className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                     >
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
-                <p className="text-xs text-foreground font-medium line-clamp-1">
-                  {currentSelectedMedia.caption || "Instagram Post #" + currentSelectedMedia.id.slice(-6)}
-                </p>
-                <p className="text-[10px] text-muted-foreground font-mono-ui mt-0.5">
-                  ID: {currentSelectedMedia.id}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsBrowsing(true)}
-                  className="px-2.5 py-1.5 rounded-md border border-border bg-muted/40 hover:bg-accent text-xs font-medium text-foreground transition-colors"
-                >
-                  Change
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearSelection}
-                  title="Deselect post"
-                  className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
-          ) : (
+          )}
+
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-foreground">
-                  Select the post or reel for this automation:
-                </p>
-                {currentSelectedMedia && (
-                  <button
-                    type="button"
-                    onClick={() => setIsBrowsing(false)}
-                    className="text-[11px] text-muted-foreground hover:text-foreground font-medium underline"
-                  >
-                    Keep selected
-                  </button>
-                )}
-              </div>
+              <p className="text-xs font-medium text-foreground">
+                {selectedIds.length ? "Add another post or reel:" : "Select the posts or reels for this automation:"}
+              </p>
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -302,7 +265,8 @@ export function PostSelector({
                   </button>
                 </div>
                 {linkError && <p className="text-[11px] text-destructive">{linkError}</p>}
-                <p className="text-[10px] text-muted-foreground">Or pick from your feed below.</p>
+                {notice && !linkError && <p className="text-[11px] text-accent-yellow-foreground">{notice}</p>}
+                <p className="text-[10px] text-muted-foreground">Or tap posts in your feed below (tap again to remove).</p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -412,12 +376,12 @@ export function PostSelector({
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-[300px] overflow-y-auto pr-1 pb-1">
                   {filteredList.map((item) => {
-                    const isSelected = selectedMediaId === item.id
+                    const isSelected = selectedIds.includes(item.id)
                     return (
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => handleSelectPost(item)}
+                        onClick={() => togglePost(item)}
                         className={`aspect-square rounded-xl border overflow-hidden relative group text-left transition-all duration-150 bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary ${
                           isSelected
                             ? "border-primary ring-2 ring-primary/40 scale-[0.98]"
@@ -462,7 +426,6 @@ export function PostSelector({
                 </div>
               )}
             </div>
-          )}
         </div>
       )}
     </div>

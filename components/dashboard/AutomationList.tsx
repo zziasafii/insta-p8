@@ -112,7 +112,7 @@ export function AutomationList({ automations, onDelete, onEdit, onChanged, userI
               <Instagram className="w-3 h-3" /> Post Specific
             </div>
             {postSpecificRules.map((rule, idx) => (
-              <RuleCard key={rule.id} rule={rule} onDelete={onDelete} onEdit={onEdit} onToggle={handleToggle} onDuplicate={handleDuplicate} index={idx} mediaUrl={mediaMap[rule.specific_media_id || ""]} isSpecific />
+              <RuleCard key={rule.id} rule={rule} onDelete={onDelete} onEdit={onEdit} onToggle={handleToggle} onDuplicate={handleDuplicate} index={idx} mediaUrl={mediaMap[(rule.specific_media_id || "").split(",")[0]]} isSpecific />
             ))}
           </div>
         )}
