@@ -297,7 +297,7 @@ export function CreateRuleForm({ userId, triggerSource, onSuccess, editRule }: C
               <StepHeader
                 number={1}
                 title={triggerSource === "comment" ? "Where should this workflow run?" : triggerSource === "dm" ? "Which messages should start it?" : "Which story action should start it?"}
-                description={triggerSource === "comment" ? "Choose one post, one reel, or apply it everywhere." : "Choose the simple condition that starts this workflow."}
+                description={triggerSource === "comment" ? "Pick one or more posts and reels, or apply it everywhere." : "Choose the simple condition that starts this workflow."}
               />
 
               {triggerSource === "story" && (

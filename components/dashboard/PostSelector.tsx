@@ -188,7 +188,7 @@ export function PostSelector({
         <div className="rounded-xl border border-border bg-card/60 p-3.5 space-y-3 animate-in fade-in duration-200">
           {selectedIds.length > 0 && (
             <div className="space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-accent-yellow-foreground">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground/70">
                 Runs on {selectedIds.length} {selectedIds.length === 1 ? "post" : "posts"}
               </p>
               {selectedIds.map((id) => {
@@ -265,7 +265,7 @@ export function PostSelector({
                   </button>
                 </div>
                 {linkError && <p className="text-[11px] text-destructive">{linkError}</p>}
-                {notice && !linkError && <p className="text-[11px] text-accent-yellow-foreground">{notice}</p>}
+                {notice && !linkError && <p className="text-[11px] text-foreground/70">{notice}</p>}
                 <p className="text-[10px] text-muted-foreground">Or tap posts in your feed below (tap again to remove).</p>
               </div>
 
