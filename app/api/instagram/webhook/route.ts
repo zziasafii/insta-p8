@@ -97,6 +97,68 @@ function keywordMatches(triggerValue: string, text: string): boolean {
 }
 
 // ============================================================
+// Auto-attach: a comment on a post that no automation covers yet. If the post's caption asks people to
+// "Comment WORD" and this comment has WORD, add the post to WORD's comment automation (even a paused one),
+// switch it on, and switch on WORD's DM automation too. Returns the automation to answer with, or null.
+// Turn it off with AUTO_ATTACH=off.
+// ============================================================
+function captionKeywords(caption: string): string[] {
+  const out: string[] = []
+  const re = /\bcomment\s+["'‘’“”]?([a-z0-9]+)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(caption))) out.push(m[1].toLowerCase())
+  return out
+}
+
+async function autoAttach(supabase: any, user: any, all: any[], mediaId: string, commentText: string): Promise<any | null> {
+  if ((process.env.AUTO_ATTACH || "").toLowerCase() === "off") return null
+  // Only look at the caption when the comment has a keyword some per-post or paused comment automation uses.
+  const candidates = all.filter(
+    (a: any) =>
+      a.trigger_source === "comment" &&
+      a.trigger_type === "keyword" &&
+      (a.specific_media_id || !a.is_active) &&
+      !onPost(a, mediaId) &&
+      keywordMatches(a.trigger_value, commentText),
+  )
+  if (!candidates.length) return null
+  let caption = ""
+  try {
+    const r = await fetch(`${GRAPH}/${mediaId}?fields=caption&access_token=${user.access_token}`)
+    const j = await r.json()
+    caption = j.caption || ""
+  } catch (e) {
+    console.log("[auto-attach] caption fetch failed")
+    return null
+  }
+  const asked = captionKeywords(caption)
+  const pick = candidates.find((a: any) =>
+    a.trigger_value.split(",").map((k: string) => k.trim().toLowerCase()).some((k: string) => asked.includes(k)),
+  )
+  if (!pick) {
+    console.log(`[auto-attach] media ${mediaId}: caption asks for [${asked.join(", ")}], no paused/per-post automation matches`)
+    return null
+  }
+  const ids = String(pick.specific_media_id || "").split(",").map((x) => x.trim()).filter(Boolean)
+  ids.push(String(mediaId))
+  const specific = ids.join(",")
+  const { error } = await supabase.from("automations").update({ specific_media_id: specific, is_active: true }).eq("id", pick.id)
+  if (error) {
+    console.log("[auto-attach] update failed", error.message)
+    return null
+  }
+  const kws = pick.trigger_value.split(",").map((k: string) => k.trim().toLowerCase()).filter(Boolean)
+  const dms = all.filter(
+    (a: any) => a.trigger_source === "dm" && !a.is_active && a.trigger_value.split(",").some((k: string) => kws.includes(k.trim().toLowerCase())),
+  )
+  for (const d of dms) await supabase.from("automations").update({ is_active: true }).eq("id", d.id)
+  console.log(`[auto-attach] ✅ "${pick.name}" now on media ${mediaId} (${ids.length} post(s)); DM automations switched on: ${dms.length}`)
+  pick.specific_media_id = specific
+  pick.is_active = true
+  return pick
+}
+
+// ============================================================
 // Unified response sender — handles text, card, media, quick
 // replies, typing indicators, and human-like delays.
 // ============================================================
@@ -313,14 +375,15 @@ export async function POST(request: NextRequest) {
       }
       user = fixUserIds(user)
 
-      const { data: automations } = await supabase
+      const { data: allAutomations } = await supabase
         .from("automations")
         .select("*")
         .eq("user_id", user.id)
-        .eq("is_active", true)
+      // paused ones are only used by auto-attach (a paused keyword automation wakes up for its post)
+      const automations = (allAutomations || []).filter((a: any) => a.is_active)
 
-      console.log(`[webhook] user=${user.username} active automations=${automations?.length || 0}`)
-      if (!automations?.length) continue
+      console.log(`[webhook] user=${user.username} active automations=${automations.length} (all ${allAutomations?.length || 0})`)
+      if (!allAutomations?.length) continue
 
       // ============================================================
       //  PART A: COMMENTS
@@ -359,6 +422,7 @@ export async function POST(request: NextRequest) {
                 keywordMatches(a.trigger_value, commentText),
             )
           }
+          if (!match) match = await autoAttach(supabase, user, allAutomations, mediaId, commentText)
           if (!match) continue
 
                     const content = parseContent(match.response_content)
